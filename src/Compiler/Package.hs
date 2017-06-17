@@ -59,7 +59,7 @@ pkgName pkg = last $ splitPath $ pkgQualName pkg
 -- | Is this a package director?
 isPackageDir :: Packages -> FilePath -> Bool
 isPackageDir (Packages _ roots) dir
-  = (node_modules `elem` splitPath dir)  
+  = (node_modules `elem` splitPath dir)
     || (any (startsWith dir) roots)
 -}
 
@@ -69,7 +69,7 @@ packageInfoFromDir :: Packages -> FilePath -> (FilePath,FilePath)
 packageInfoFromDir pkgs dir
   = case packageFromDir pkgs dir of
       Nothing  -> ("","")
-      Just pkg -> (pkgQualName pkg, pkgLocal pkg) 
+      Just pkg -> (pkgQualName pkg, pkgLocal pkg)
 
 packageFromDir :: Packages -> FilePath -> Maybe Package
 packageFromDir pkgs0 dir
@@ -84,7 +84,7 @@ searchPackages pkgs current pkgname name
   = do ccurrent <- canonicalizePath (if null current then "." else current)
        let toSearch = (if null pkgname then id else filter (\pkg -> pkgName pkg == pkgname)) $
                       visiblePackages pkgs ccurrent
-       trace ("search packages for " ++ pkgname ++ "/" ++ name ++ " in " ++ show (map pkgQualName toSearch)) $ return ()
+       --trace ("search packages for " ++ pkgname ++ "/" ++ name ++ " in " ++ show (map pkgQualName toSearch)) $ return ()
        searchIn toSearch
   where
     searchIn [] = return Nothing
@@ -112,10 +112,7 @@ visiblePackages (Packages pkgs _) ccurrent
     packageBase :: FilePath -> FilePath
     packageBase pkgpath
       = case dropWhile (/=node_modules) (reverse (splitPath pkgpath)) of
-          (_node_modules:base) ->
-            case pkgpath of
-              '/' : _ -> '/' : (joinPaths (reverse base))
-              _       -> joinPaths (reverse base)
+          (_node_modules:base) -> joinPaths (reverse base)
           []                   -> pkgpath -- NOTE: this can happen for roots; leaving as it is is fine
 
 ---------------------------------------------------------------

@@ -51,7 +51,6 @@ import System.Directory ( doesFileExist, doesDirectoryExist
                         , copyFile
                         , getCurrentDirectory, getDirectoryContents
                         , createDirectoryIfMissing, canonicalizePath )
---import qualified System.FilePath as FS (combine, splitDirectories, splitPath, joinPath, normalise)
 import System.Info      ( os )
 
 import qualified Platform.Console as C (getProgramPath)
@@ -144,8 +143,18 @@ undelimPaths xs
 -- | Split a path into its directory parts
 splitPath :: FilePath -> [FilePath]
 splitPath fdir
-  = let fs = filter (not . null) $ splitOn isPathSep fdir
-    in if (null fs) then [""] else fs
+  = let fs = filter (not . null) $ splitOn isPathSep fdir in
+    let fs' = if (null fs) then [""] else fs
+    in repair fdir fs'
+    where
+      repair :: FilePath -> [FilePath] -> [FilePath]
+      repair
+        = if os == "windows"
+          then \_ fs -> fs
+          else repair'
+        where
+        repair' ('/' : _) (f : fs) = ('/' : f) : fs
+        repair' _ fs = fs
 
 
 joinPath :: FilePath -> FilePath -> FilePath
@@ -154,41 +163,19 @@ joinPath p1 p2
 
 -- | Join a list of paths into one path
 joinPaths :: [FilePath] -> FilePath
-joinPaths dirs = if os == "windows"
-            then joinPaths' dirs
-            else
-              case dirs of
-                ('/':path) : paths -> ("/"++) . joinPaths' $ dirs
-                _ -> joinPaths' dirs
-          where
-            joinPaths' dirs
-              = concat
-              $ intersperse [pathSep]
-              $ normalize
-              $ filter (not . null)
-              $ concatMap splitPath dirs
-              where
-                normalize []            = []
-                normalize (p:".":ps)    = normalize (p:ps)
-                normalize (p:"..":ps)   | p == "."  = normalize ("..":ps)
-                                        | p == ".." = p : normalize ("..":ps)
-                                        | otherwise = normalize ps
-                normalize (p:ps)        = p : normalize ps
-
--- joinPaths :: [FilePath] -> FilePath
--- joinPaths = FS.joinPath
--- {-  = concat
---   $ intersperse [pathSep]
---   $ normalize
---   $ filter (not . null)
---   $ concatMap splitPath dirs
---   where
---     normalize []            = []
---     normalize (p:".":ps)    = normalize (p:ps)
---     normalize (p:"..":ps)   | p == "."  = normalize ("..":ps)
---                             | p == ".." = p : normalize ("..":ps)
---                             | otherwise = normalize ps
---     normalize (p:ps)        = p : normalize ps -}
+joinPaths dirs
+  = concat
+  $ intersperse [pathSep]
+  $ normalize
+  $ filter (not . null)
+  $ concatMap splitPath dirs
+  where
+    normalize []            = []
+    normalize (p:".":ps)    = normalize (p:ps)
+    normalize (p:"..":ps)   | p == "."  = normalize ("..":ps)
+                            | p == ".." = p : normalize ("..":ps)
+                            | otherwise = normalize ps
+    normalize (p:ps)        = p : normalize ps
 
 -- | Normalize path separators
 normalize :: FilePath -> FilePath

@@ -928,8 +928,7 @@ codeGenJS term flags modules compileTarget outBase core
             -- try to ensure require.js is there
             -- TODO: we should search along the node_modules search path
             --mbReq <- searchPackages (packages flags) (outDir flags) "requirejs" "require.js"
-            trace ("search paths: [" ++ (show $ packages flags) ++ ",node_modules]") $ return ()
-            mbReq <- findPackages [outDir flags, "/home/dhil/koka/my-koka/node_modules"] "requirejs" "require.js"
+            mbReq <- findPackages [outDir flags, "node_modules"] "requirejs" "require.js"
             case mbReq of
               Just reqPath -> copyTextIfNewer (rebuild flags) reqPath (outName flags "require.js")
               Nothing      -> trace "could not find requirejs" $ return () -- TODO: warning?
