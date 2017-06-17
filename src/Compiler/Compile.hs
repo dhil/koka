@@ -16,8 +16,8 @@ module Compiler.Compile( -- * Compile
 
                          -- * Interpreter
                        , compileExpression, compileType
-                       , compileValueDef, compileTypeDef 
-                       , compileProgram                       
+                       , compileValueDef, compileTypeDef
+                       , compileProgram
                        , gammaFind
 
                          -- * Types
@@ -33,7 +33,7 @@ import Data.Char              ( isAlphaNum )
 
 import System.Directory       ( createDirectoryIfMissing, canonicalizePath )
 import Data.List              ( isPrefixOf )
-import Control.Applicative 
+import Control.Applicative
 import Control.Monad          ( ap, when )
 import Common.Failure
 import Lib.Printer            ( withNewFilePrinter )
@@ -41,11 +41,11 @@ import Common.Range           -- ( Range, sourceName )
 import Common.Name            -- ( Name, newName, qualify, asciiEncode )
 import Common.NamePrim        ( nameExpr, nameType, nameInteractiveModule, nameSystemCore, nameMain, nameTpWrite, nameTpIO, nameTpCps, nameTpAsync )
 import Common.Error
-import Common.File            
+import Common.File
 import Common.ColorScheme
 import Common.Message         ( table )
 import Common.Syntax
-import Syntax.Syntax          
+import Syntax.Syntax
 -- import Syntax.Lexer           ( readInput )
 import Syntax.Parse           ( parseProgramFromFile, parseValueDef, parseExpression, parseTypeDef, parseType )
 
@@ -58,16 +58,16 @@ import Core.Cps               ( cpsTransform )
 import Static.BindingGroups   ( bindingGroups )
 import Static.FixityResolve   ( fixityResolve, fixitiesNew, fixitiesCompose )
 
-import Kind.ImportMap       
+import Kind.ImportMap
 import Kind.Newtypes          ( newtypesCompose )
 import Kind.Infer             ( inferKinds )
 import Kind.Kind              ( kindEffect )
 
-import Type.Type              
+import Type.Type
 import Type.Kind              ( containsHandledEffect )
 import Type.Assumption        ( gammaLookupQ, extractGamma, infoType, gammaUnions, extractGammaImports, gammaLookup, gammaMap )
 import Type.Infer             ( inferTypes )
-import Type.Pretty hiding     ( verbose )            
+import Type.Pretty hiding     ( verbose )
 import Compiler.Options       ( Flags(..), prettyEnvFromFlags, colorSchemeFromFlags, prettyIncludePath )
 
 import Compiler.Module
@@ -155,7 +155,7 @@ gammaFind name g
 
 compileExpression :: Terminal -> Flags -> Loaded -> CompileTarget () -> UserProgram -> Int -> String -> IO (Error Loaded)
 compileExpression term flags loaded compileTarget program line input
-  = runIOErr $ 
+  = runIOErr $
     do let qnameExpr = (qualify (getName program) nameExpr)
        def <- liftError (parseExpression (semiInsert flags) (show nameInteractiveModule) line qnameExpr input)
        let programDef = programAddDefs program [] [def]
@@ -163,9 +163,9 @@ compileExpression term flags loaded compileTarget program line input
        case compileTarget of
          -- run a particular entry point
          Executable name ()  | name /= nameExpr
-           -> compileProgram' term flags (loadedModules loaded) compileTarget "<interactive>" programDef       
+           -> compileProgram' term flags (loadedModules loaded) compileTarget "<interactive>" programDef
 
-         -- entry point is the expression: compile twice: 
+         -- entry point is the expression: compile twice:
          --  first to get the type of the expression and create a 'show' wrapper,
          --  then to actually run the program
            | otherwise
@@ -176,9 +176,9 @@ compileExpression term flags loaded compileTarget program line input
                  case splitFunType rho of
                    -- return unit: just run the expression (for its assumed side effect)
                    Just (_,_,tres)  | isTypeUnit tres
-                      -> compileProgram' term flags (loadedModules ld) compileTarget  "<interactive>" programDef       
+                      -> compileProgram' term flags (loadedModules ld) compileTarget  "<interactive>" programDef
                    -- check if there is a show function, or use generic print if not.
-                   Just (_,_,tres)  
+                   Just (_,_,tres)
                       -> do -- ld <- compileProgram' term flags (loadedModules ld0) Nothing "<interactive>" programDef
                             let matchShow (_,info) = let (_,_,itp) = splitPredType (infoType info)
                                                      in case splitFunType itp of
@@ -188,34 +188,33 @@ compileExpression term flags loaded compileTarget program line input
                                 r = rangeNull
                                 mkApp e es = App e [(Nothing,x) | x <- es] r
                             case filter matchShow (gammaLookup (newName "show") (loadedGamma ld)) of
-                              [(qnameShow,_)] 
-                                -> do let expression = mkApp (Var (qualify nameSystemCore (newName "println")) False r) 
+                              [(qnameShow,_)]
+                                -> do let expression = mkApp (Var (qualify nameSystemCore (newName "println")) False r)
                                                         [mkApp (Var qnameShow False r) [mkApp (Var qnameExpr False r) []]]
-                                      let defMain = Def (ValueBinder (qualify (getName program) nameMain) () (Lam [] expression r) r r)  r Public DefFun ""                            
+                                      let defMain = Def (ValueBinder (qualify (getName program) nameMain) () (Lam [] expression r) r r)  r Public DefFun ""
                                       let programDef' = programAddDefs programDef [] [defMain]
                                       compileProgram' term flags (loadedModules ld) (Executable nameMain ()) "<interactive>" programDef'
                                       return ld
-                              
-                              _  -> liftError $ errorMsg (ErrorGeneral rangeNull (text "no 'show' function defined for values of type:" <+> ppType (prettyEnvFromFlags flags) tres)) 
-                                                     -- mkApp (Var (qualify nameSystemCore (newName "gprintln")) False r) 
+
+                              _  -> liftError $ errorMsg (ErrorGeneral rangeNull (text "no 'show' function defined for values of type:" <+> ppType (prettyEnvFromFlags flags) tres))
+                                                     -- mkApp (Var (qualify nameSystemCore (newName "gprintln")) False r)
                                                      --   [mkApp (Var nameExpr False r) []]
                    Nothing
                     -> failure ("Compile.Compile.compileExpression: should not happen")
          -- no evaluation
-         _ -> compileProgram' term flags (loadedModules loaded) compileTarget "<interactive>" programDef       
+         _ -> compileProgram' term flags (loadedModules loaded) compileTarget "<interactive>" programDef
 
-         
-errorModuleNotFound :: Flags -> Range -> Name -> ErrorMessage 
+errorModuleNotFound :: Flags -> Range -> Name -> ErrorMessage
 errorModuleNotFound flags range name
   = ErrorGeneral range $ errorNotFound flags colorModule "module" (pretty name)
 
-errorFileNotFound :: Flags -> FilePath -> ErrorMessage 
+errorFileNotFound :: Flags -> FilePath -> ErrorMessage
 errorFileNotFound flags name
   = ErrorIO $ text "error:" <+> errorNotFound flags colorSource "" (text name)
 
 errorNotFound flags clr kind namedoc
   = text ("could not find" ++ (if null kind then "" else (" " ++ kind)) ++ ":") <+> color (clr cscheme) namedoc <->
-    text "search path:" <+> prettyIncludePath flags 
+    text "search path:" <+> prettyIncludePath flags
   where
     cscheme = colorSchemeFromFlags flags
 
@@ -229,7 +228,7 @@ compileType term flags loaded program line input
   = runIOErr $
     do let qnameType = qualify (getName program) nameType
        tdef <- liftError $ parseType (semiInsert flags) (show nameInteractiveModule) line nameType input
-       let programDef = programAddDefs (programRemoveAllDefs program) [tdef] [] 
+       let programDef = programAddDefs (programRemoveAllDefs program) [tdef] []
        -- typeCheck (loaded) flags line programDef
        compileProgram' term flags (loadedModules loaded) Object "<interactive>" programDef
 
@@ -901,18 +900,18 @@ codeGenJS term flags modules compileTarget outBase core  | not (JS `elem` target
   = return Nothing
 codeGenJS term flags modules compileTarget outBase core
   = do let outjs = outBase ++ ".js"
-       let mbEntry = case compileTarget of 
+       let mbEntry = case compileTarget of
                        Executable name tp -> Just (name,isAsyncFunction tp)
                        _                  -> Nothing
        let js    = javascriptFromCore mbEntry core
        termPhase term ( "generate javascript: " ++ outjs )
-       writeDocW 80 outjs js 
+       writeDocW 80 outjs js
        when (showAsmJavaScript flags) (termDoc term js)
 
        case mbEntry of
         Nothing -> return Nothing
         Just (name) ->
-         do -- always generate an index.html file                
+         do -- always generate an index.html file
             let outHtml = outName flags ((if (null (exeName flags)) then "index" else (exeName flags)) ++ ".html")
                 contentHtml = text $ unlines $ [
                                 "<!DOCTYPE html>",
@@ -923,29 +922,37 @@ codeGenJS term flags modules compileTarget outBase core
                                 "  <body>",
                                 "  </body>",
                                 "</html>"
-                              ]  
+                              ]
             termPhase term ("generate index html: " ++ outHtml)
-            writeDoc outHtml contentHtml  
+            writeDoc outHtml contentHtml
             -- try to ensure require.js is there
             -- TODO: we should search along the node_modules search path
-            mbReq <- searchPackages (packages flags) (outDir flags) "requirejs" "require.js"
+            --mbReq <- searchPackages (packages flags) (outDir flags) "requirejs" "require.js"
+            trace ("search paths: [" ++ (show $ packages flags) ++ ",node_modules]") $ return ()
+            mbReq <- findPackages [outDir flags, "/home/dhil/koka/my-koka/node_modules"] "requirejs" "require.js"
             case mbReq of
               Just reqPath -> copyTextIfNewer (rebuild flags) reqPath (outName flags "require.js")
               Nothing      -> trace "could not find requirejs" $ return () -- TODO: warning?
-            
             case host flags of
               Browser ->
                do return (Just (runSystem (dquote outHtml ++ " &")))
               Node ->
-               do return (Just (runSystem ("node " ++ outjs))) 
+               do return (Just (runSystem ("node " ++ outjs)))
+         where
+           findPackages :: [FilePath] -> FilePath -> FilePath -> IO (Maybe FilePath)
+           findPackages [] _ _ = return Nothing
+           findPackages (sp : searchPaths) libdir libname
+             = do mbReq <- searchPackages (packages flags) sp libdir libname
+                  case mbReq of
+                    Nothing -> findPackages searchPaths libdir libname
+                    Just _ -> return mbReq
 
 
 
-  
 copyIFaceToOutputDir :: Terminal -> Flags -> FilePath -> PackageName -> [Module] -> IO ()
 copyIFaceToOutputDir term flags iface targetPath imported
   -- | host flags == Node && target flags == JS = return ()
-  -- | otherwise  
+  -- | otherwise
   = do let outName = joinPaths [outDir flags, targetPath, notdir iface]
        copyTextIfNewer (rebuild flags) iface outName
        if (CS `elem` targets flags)

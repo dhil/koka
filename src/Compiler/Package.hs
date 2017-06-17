@@ -22,7 +22,7 @@ import Lib.PPrint
 import Data.List        ( intersperse, replicate, sort )
 import Platform.Config  ( pathSep, pathDelimiter )
 import Common.Failure   ( raiseIO, catchIO )
- 
+
 import System.Directory ( doesFileExist, doesDirectoryExist
                         , getModificationTime, copyFile
                         , getCurrentDirectory, getDirectoryContents
@@ -39,6 +39,7 @@ import Lib.JSON
 type PackageName = String
 data Packages    = Packages { packages :: [Package],
                               roots    :: [FilePath] }
+                   deriving Show
 
 data Package     = Package { pkgDir   :: FilePath,    -- /x/node_modules/A/lib
                              pkgQualName  :: PackageName, -- A/B/C
@@ -79,40 +80,43 @@ packageFromDir pkgs0 dir
 
 -- | Search the packages from a certain directory
 searchPackages :: Packages -> FilePath -> FilePath -> FilePath -> IO (Maybe FilePath)
-searchPackages pkgs current pkgname name 
+searchPackages pkgs current pkgname name
   = do ccurrent <- canonicalizePath (if null current then "." else current)
        let toSearch = (if null pkgname then id else filter (\pkg -> pkgName pkg == pkgname)) $
                       visiblePackages pkgs ccurrent
-       -- trace ("search packages for " ++ pkgname ++ "/" ++ name ++ " in " ++ show (map pkgQualName toSearch)) $ return ()
+       trace ("search packages for " ++ pkgname ++ "/" ++ name ++ " in " ++ show (map pkgQualName toSearch)) $ return ()
        searchIn toSearch
-  where                     
+  where
     searchIn [] = return Nothing
     searchIn (pkg:pkgs)
       = do let path = joinPath (pkgDir pkg) name
            exist <- doesFileExist path
-           if exist 
+           if exist
             then return (Just path)
-            else searchIn pkgs                     
+            else searchIn pkgs
 
 -- | Return the visible packages given a (canonical) current directory
 visiblePackages :: Packages -> FilePath -> [Package]
 visiblePackages (Packages pkgs _) ccurrent
-  = visiblePkgs pkgs 
+  = visiblePkgs pkgs
   where
-    visiblePkgs pkgs 
-      = do let isVisible pkg = ccurrent `startsWith` packageBase (pkgDir pkg)               
+    visiblePkgs pkgs
+      = do let isVisible pkg = ccurrent `startsWith` packageBase (pkgDir pkg)
                isVisibleSubs [] = False
                isVisibleSubs (pkg:_) = isVisible pkg
                visible = dropWhile (not . isVisible) pkgs
            case filter (isVisibleSubs . pkgSub) visible of
              []      -> visible
-             (pkg:_) -> visiblePkgs (pkgSub pkg) ++ visible -- note: _ should always be []   
-                  
+             (pkg:_) -> visiblePkgs (pkgSub pkg) ++ visible -- note: _ should always be []
+
     packageBase :: FilePath -> FilePath
     packageBase pkgpath
       = case dropWhile (/=node_modules) (reverse (splitPath pkgpath)) of
-          (_node_modules:base) -> joinPaths (reverse base)
-          []                   -> pkgpath -- NOTE: this can happen for roots; leaving as it is is fine    
+          (_node_modules:base) ->
+            case pkgpath of
+              '/' : _ -> '/' : (joinPaths (reverse base))
+              _       -> joinPaths (reverse base)
+          []                   -> pkgpath -- NOTE: this can happen for roots; leaving as it is is fine
 
 ---------------------------------------------------------------
 -- discover packages
@@ -123,8 +127,8 @@ discoverPackages :: FilePath -> IO Packages
 discoverPackages root
   = do croot <- canonicalizePath root
        pkgs <- walk (splitPath croot) 0 []
-       -- trace ("packages: " ++ show (ppPackages (packages pkgs))) $ return ()
-       return pkgs  
+       --trace ("packages: " ++ show (ppPackages (packages pkgs))) $ return ()
+       return pkgs
   where
     walk [] n acc
       = do eroots  <- getEnvPaths node_path
@@ -132,12 +136,12 @@ discoverPackages root
            let hroots = map (joinPath homedir) [".node_modules",".node_libraries"]
                -- bug: we do not search in $prefix/lib/node since it is deprecated
                roots = hroots ++ eroots
-           pkgss <- mapM (\(m,p) -> readSubPackages m "" p) (zip [n..] roots) 
+           pkgss <- mapM (\(m,p) -> readSubPackages m "" p) (zip [n..] roots)
            return (Packages (acc ++ concat pkgss) roots)
 
     walk ps n acc
       = do cpkgs <- readSubPackages n "" (joinPaths (ps ++ [node_modules]))
-           walk (init ps) (if null cpkgs then n else n+1) (acc ++ cpkgs)  
+           walk (init ps) (if null cpkgs then n else n+1) (acc ++ cpkgs)
 
     readSubPackages n pname path
       = -- trace ("read sub packages: " ++ ppath) $
@@ -145,11 +149,11 @@ discoverPackages root
            contents <- if exist then getDirectoryContents path else return []
            let children = sort $ filter (\c -> not (null c) && head c /= '.') contents
            cpkgs    <- mapM (readPackage pname path n) children
-           return (filter (not . null . pkgDir) cpkgs)        
+           return (filter (not . null . pkgDir) cpkgs)
 
     readPackage pname path n cname
       = -- trace ("read package: " ++ joinPath path cname) $
-        do let jsonpath = joinPaths [path,cname,package_json]        
+        do let jsonpath = joinPaths [path,cname,package_json]
            exist <- doesFileExist jsonpath
            if (not exist)
             then return $ Package "" "" "" []
@@ -158,14 +162,14 @@ discoverPackages root
                                      JsArray elems -> map (map toLower . toString) elems
                                      _             -> []
                         isKokaPkg = (cname `startsWith` "koka"  || "koka" `elem` keywords)
-                    let local = toString $ jsFind json (JsString (if isKokaPkg then "lib" else "")) ["directories","lib"]                        
+                    let local = toString $ jsFind json (JsString (if isKokaPkg then "lib" else "")) ["directories","lib"]
                         pkglocal = joinPaths $ dropWhile (==".") $ splitPath local -- strip off leading "./xxx"
                         pkgdir   = joinPaths [path,cname,pkglocal] -- TODO: read from json
                         pkgname  = joinPkgs [if (n==0) then "" else show n,pname,cname]
-                    -- trace ("read package: " ++ cname ++ ": " ++ local ++ ": " ++ pkglocal) $ return ()   
+                    -- trace ("read package: " ++ cname ++ ": " ++ local ++ ": " ++ pkglocal) $ return ()
                     pkgs <- readSubPackages n (joinPkg pname cname) (joinPaths [path,cname,node_modules])
                     return $ Package pkgdir pkgname pkglocal pkgs
-                              
+
 joinPkg p1 p2
   = joinPkgs [p1,p2]
 

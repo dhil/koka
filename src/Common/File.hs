@@ -9,7 +9,7 @@
     Internal errors and assertions.
 -}
 -----------------------------------------------------------------------------
-module Common.File( 
+module Common.File(
                   -- * System
                     getEnvPaths, getEnvVar
                   , searchPaths, searchPathsEx
@@ -28,7 +28,7 @@ module Common.File(
                   , isAbsolute
                   , commonPathPrefix
                   , normalizeWith
-                  , isLiteralDoc 
+                  , isLiteralDoc
 
                   -- * Files
                   , FileTime, fileTime0, maxFileTime, maxFileTimes
@@ -43,7 +43,7 @@ import Data.Char        ( toLower, isSpace )
 import Platform.Config  ( pathSep, pathDelimiter, sourceExtension )
 import qualified Platform.Runtime as B ( copyBinaryFile )
 import Common.Failure   ( raiseIO, catchIO )
- 
+
 import System.Process   ( system )
 import System.Exit      ( ExitCode(..) )
 import System.Environment ( getEnvironment, getProgName )
@@ -51,6 +51,8 @@ import System.Directory ( doesFileExist, doesDirectoryExist
                         , copyFile
                         , getCurrentDirectory, getDirectoryContents
                         , createDirectoryIfMissing, canonicalizePath )
+--import qualified System.FilePath as FS (combine, splitDirectories, splitPath, joinPath, normalise)
+import System.Info      ( os )
 
 import qualified Platform.Console as C (getProgramPath)
 import Lib.Trace
@@ -68,7 +70,7 @@ splitOn pred xs
   = normalize [] xs
   where
     normalize acc [] = reverse acc
-    normalize acc xs 
+    normalize acc xs
       = case (span (not . pred) xs) of
           (pre,post) -> normalize (pre:acc) (dropWhile pred post)
 
@@ -98,7 +100,7 @@ extname fname
   = let (pre,post) = span (/='.') (reverse (notdir fname))
     in if null post
         then ""
-        else ("." ++ reverse pre) 
+        else ("." ++ reverse pre)
 
 -- | Return the directory prefix (including last separator if present)
 dirname :: FileName -> FileName
@@ -113,7 +115,7 @@ notdir fname
 
 notext :: FileName -> FileName
 notext fname
-  = reverse (drop (length (extname fname)) (reverse fname))  
+  = reverse (drop (length (extname fname)) (reverse fname))
 
 noexts :: FileName -> FileName
 noexts fname
@@ -128,7 +130,7 @@ undelimPaths xs
     normalize ps "" (c:cs)  | isSpace c
       = normalize ps "" cs
     -- directory on windows
-    normalize ps "" (c:':':cs)    
+    normalize ps "" (c:':':cs)
       = normalize ps (':':c:[]) cs
     -- normal
     normalize ps p xs
@@ -138,13 +140,13 @@ undelimPaths xs
                      else reverse (reverse p:ps)
           (c:cs) | isPathDelimiter c -> normalize (reverse p:ps) "" cs
                  | otherwise         -> normalize ps (c:p) cs
- 
+
 -- | Split a path into its directory parts
 splitPath :: FilePath -> [FilePath]
 splitPath fdir
   = let fs = filter (not . null) $ splitOn isPathSep fdir
     in if (null fs) then [""] else fs
-      
+
 
 joinPath :: FilePath -> FilePath -> FilePath
 joinPath p1 p2
@@ -152,19 +154,41 @@ joinPath p1 p2
 
 -- | Join a list of paths into one path
 joinPaths :: [FilePath] -> FilePath
-joinPaths dirs
-  = concat 
-  $ intersperse [pathSep] 
-  $ normalize
-  $ filter (not . null) 
-  $ concatMap splitPath dirs
-  where
-    normalize []            = []
-    normalize (p:".":ps)    = normalize (p:ps)
-    normalize (p:"..":ps)   | p == "."  = normalize ("..":ps)
-                            | p == ".." = p : normalize ("..":ps)
-                            | otherwise = normalize ps
-    normalize (p:ps)        = p : normalize ps
+joinPaths dirs = if os == "windows"
+            then joinPaths' dirs
+            else
+              case dirs of
+                ('/':path) : paths -> ("/"++) . joinPaths' $ dirs
+                _ -> joinPaths' dirs
+          where
+            joinPaths' dirs
+              = concat
+              $ intersperse [pathSep]
+              $ normalize
+              $ filter (not . null)
+              $ concatMap splitPath dirs
+              where
+                normalize []            = []
+                normalize (p:".":ps)    = normalize (p:ps)
+                normalize (p:"..":ps)   | p == "."  = normalize ("..":ps)
+                                        | p == ".." = p : normalize ("..":ps)
+                                        | otherwise = normalize ps
+                normalize (p:ps)        = p : normalize ps
+
+-- joinPaths :: [FilePath] -> FilePath
+-- joinPaths = FS.joinPath
+-- {-  = concat
+--   $ intersperse [pathSep]
+--   $ normalize
+--   $ filter (not . null)
+--   $ concatMap splitPath dirs
+--   where
+--     normalize []            = []
+--     normalize (p:".":ps)    = normalize (p:ps)
+--     normalize (p:"..":ps)   | p == "."  = normalize ("..":ps)
+--                             | p == ".." = p : normalize ("..":ps)
+--                             | otherwise = normalize ps
+--     normalize (p:ps)        = p : normalize ps -}
 
 -- | Normalize path separators
 normalize :: FilePath -> FilePath
@@ -178,7 +202,7 @@ normalizeWith newSep path
   where
     norm acc "" = reverse acc
     norm acc (c:cs)
-      = if (isPathSep c) 
+      = if (isPathSep c)
          then norm (newSep:acc) (dropWhile isPathSep cs)
          else norm (c:acc) cs
 
